@@ -174,7 +174,7 @@ for i in range(len(t)):
     Voc_val = (
         p1 * (np.exp(lambda1 * q) - 1)
         + p2 * (np.exp(lambda2 * q) - 1)
-        + 4.2
+        + 3.65
     )
     
     Vt_val = Voc_val - Vrc_val
