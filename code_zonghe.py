@@ -58,8 +58,8 @@ print("=" * 70)
 # ===============================
 p1 = 0.56777875        # V
 p2 = -1.328625e-11     # V
-lambda1 = -0.21950625  # Ah^-1
-lambda2 = 2.330        # Ah^-1
+lambda1 = -0.21950625*2.25 # Ah^-1
+lambda2 = 2.330*2.25        # Ah^-1
 
 Qeff = 5.0             # Ah
 Ptotal = 10.0          # W
@@ -336,3 +336,32 @@ print(f"  总能量输出: {energy_cumulative[-1]:.4f} Wh")
 print(f"  目标功率: {Ptotal:.2f} W")
 print(f"  平均功率误差: {np.mean(np.abs(power_array - Ptotal)):.4f} W")
 print("=" * 70)
+
+# ===============================
+# 新增图：Voc vs Discharged Capacity & Voc vs SOC
+# ===============================
+
+# 放电电量 q (Ah)
+q_array = (1 - s) * Qeff
+
+fig2 = plt.figure(figsize=(12, 5))
+
+# 子图 1：Voc vs 放电电量
+ax_q = plt.subplot(1, 2, 1)
+ax_q.plot(q_array, Voc_array, linewidth=2, color='teal')
+ax_q.grid(True, alpha=0.3)
+ax_q.set_xlabel("Discharged Capacity q (Ah)", fontsize=11)
+ax_q.set_ylabel("Open Circuit Voltage Voc (V)", fontsize=11)
+ax_q.set_title("Voc vs Discharged Capacity", fontsize=12)
+
+# 子图 2：Voc vs SOC
+ax_soc = plt.subplot(1, 2, 2)
+ax_soc.plot(s, Voc_array, linewidth=2, color='darkorange')
+ax_soc.grid(True, alpha=0.3)
+ax_soc.set_xlabel("State of Charge (SOC)", fontsize=11)
+ax_soc.set_ylabel("Open Circuit Voltage Voc (V)", fontsize=11)
+ax_soc.set_title("Voc vs SOC", fontsize=12)
+ax_soc.invert_xaxis()  # 放电方向：SOC 从 1 → 0（论文中更直观）
+
+plt.tight_layout()
+plt.show()
