@@ -222,10 +222,10 @@ W_NET    = 0.7
 W_GPS    = 0.7
 
 # 老化量列表 (Ah)
-Q_AGING_LIST = [0.0, 25.0, 50.0, 200.0, 1000.0]
+Q_AGING_LIST = [0.0, 100, 500, 1000, 5000]
 
 # Qeff 老化衰减比率
-QEFF_DECAY_RATIO = 1.0683e-3   # Qeff减少量 = QEFF_DECAY_RATIO * Q
+QEFF_DECAY_RATIO = 1.314e-3   # Qeff减少量 = QEFF_DECAY_RATIO * Q
 QEFF_NOMINAL     = 5.0         # Ah, 新电池
 
 
@@ -290,7 +290,7 @@ def calc_lambda2(Q_aging):
 
 def calc_Qeff(Q_aging):
     """有效容量 = 新电池容量 - 衰减量"""
-    return max(QEFF_NOMINAL - QEFF_DECAY_RATIO * Q_aging, 0.5)  # 至少保留0.5Ah
+    return max(QEFF_NOMINAL*( 1 - QEFF_DECAY_RATIO * np.sqrt(Q_aging)), 0.5)  # 至少保留0.5Ah
 
 
 # ===============================================================
@@ -561,18 +561,18 @@ APP_COLORS = {
 # 老化水平颜色
 AGING_COLORS = {
     0.0:    '#2ecc71',   # 新电池 - 绿
-    25.0:   '#3498db',   # 轻度 - 蓝
-    50.0:   '#f39c12',   # 中度 - 橙
-    200.0:  '#e67e22',   # 重度 - 深橙
-    1000.0: '#e74c3c',   # 极度 - 红
+    100:   '#3498db',   # 轻度 - 蓝
+    500:   '#f39c12',   # 中度 - 橙
+    1000:  '#e67e22',   # 重度 - 深橙
+    5000.0: '#e74c3c',   # 极度 - 红
 }
 
 AGING_LABELS = {
     0.0:    '新电池 (Q=0)',
-    25.0:   '轻度老化 (Q=25)',
-    50.0:   '中度老化 (Q=50)',
-    200.0:  '重度老化 (Q=200)',
-    1000.0: '极度老化 (Q=1000)',
+    100.0: '轻度老化 (Q=100)',
+    500.0:   '中度老化 (Q=500)',
+    1000.0:  '重度老化 (Q=1000)',
+    5000.0: '极度老化 (Q=5000)',
 }
 
 
