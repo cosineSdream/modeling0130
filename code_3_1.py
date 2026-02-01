@@ -11,7 +11,7 @@ except:
     pass
 
 np.random.seed(42)
-
+Time_limit = 86400*3  # 仿真总时长 (秒)
 # ===============================
 # ECM 参数表及三次多项式拟合
 # ===============================
@@ -202,11 +202,11 @@ def lambda_intensity(t_sec):
     t_h = (t_sec % 86400) / 3600.0  # 转换为一天内的小时 [0, 24)
 
     # 白天主峰: 中午~下午 (中心 ~13h, 宽度 ~4h)
-    peak1 = 8.0 * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)
+    peak1 = 8 * np.exp(-0.5 * ((t_h - 14.0) / 2)**2)
     # 晚间副峰: 晚上 (中心 ~21h, 宽度 ~3h)
-    peak2 = 10.0 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)
+    peak2 = 4 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)
     # 基础强度 (凌晨低水平)
-    base  = 0.5
+    base  = 1
 
     return base + peak1 + peak2
 
@@ -218,7 +218,7 @@ def lambda_intensity(t_sec):
 def calc_P_base():
     """基础待机功耗: 屏幕关 + CPU空闲 + 网络WIFI6 idle + GPS off"""
     P_scr = calc_P_screen(0.0)
-    P_cpu = calc_P_cpu(0.02)
+    P_cpu = calc_P_cpu(0.01)
     P_net = calc_P_net('WIFI6', 0.0)   # 仅 idle 功率
     P_gps = calc_P_gps('off')
     return P_scr + P_cpu + P_net + P_gps
@@ -307,7 +307,7 @@ Qeff    = 5.0   # Ah
 # ===============================================================
 # Marked Poisson + ECM ODE 耦合仿真
 # ===============================================================
-def run_parallel_simulation(T_sim=86400, dt=10.0):
+def run_parallel_simulation(T_sim=Time_limit, dt=10.0):
     """
     核心仿真函数: 并行标记泊松过程 + Thevenin ECM 耦合.
 
@@ -469,7 +469,7 @@ print("=" * 70)
 print("运行 Marked Poisson 并行任务 + ECM 耦合仿真 ...")
 print("=" * 70)
 
-sim = run_parallel_simulation(T_sim=86400, dt=10.0)
+sim = run_parallel_simulation(T_sim=Time_limit, dt=10.0)
 
 print(f"\n放电时间: {sim['discharge_time_h']:.2f} h ({sim['discharge_time_h']*60:.1f} min)")
 print(f"总事件数: {len(sim['event_log'])}")
@@ -522,7 +522,7 @@ fig2.suptitle('并行事件时间线与总功耗演化', fontsize=15, fontweight
 
 # --- Gantt: 事件时间线 ---
 # 仅绘制在放电时间内的事件
-t_end_sim = sim['t'][-1] if len(sim['t']) > 0 else 86400
+t_end_sim = sim['t'][-1] if len(sim['t']) > 0 else Time_limit
 events_in_range = [ev for ev in sim['event_log'] if ev['t_start'] < t_end_sim]
 
 # 按应用类型分组绘制（y轴为类型索别）
@@ -758,7 +758,7 @@ plt.show()
 print("\n" + "=" * 70)
 print("仿真汇总")
 print("=" * 70)
-print(f"  仿真时长:          {86400/3600:.0f} h")
+print(f"  仿真时长:          {Time_limit/3600:.0f} h")
 print(f"  实际放电时间:      {sim['discharge_time_h']:.2f} h ({sim['discharge_time_h']*60:.1f} min)")
 print(f"  基础待机功耗:      {P_BASE*1000:.2f} mW")
 print(f"  平均总负载:        {np.mean(sim['P_total'])*1000:.2f} mW")
