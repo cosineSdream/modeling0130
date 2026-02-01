@@ -87,68 +87,12 @@ APP_TYPES = {
         'u_mean': 0.22, 'u_std': 0.04,
         'r_mean': 0.70, 'r_std': 0.10,
         'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 480.0, 'dur_std': 240.0,
-    },
-    'gaming': {
-        'label': '玩游戏',
-        'B_mean': 0.85, 'B_std': 0.05,
-        'u_mean': 0.45, 'u_std': 0.03,
-        'r_mean': 0.50, 'r_std': 0.06,
-        'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 600.0, 'dur_std': 300.0,
-    },
-    'social': {
-        'label': '社交浏览',
-        'B_mean': 0.60, 'B_std': 0.10,
-        'u_mean': 0.15, 'u_std': 0.05,
-        'r_mean': 0.45, 'r_std': 0.15,
-        'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 300.0, 'dur_std': 180.0,
-    },
-    'navigation': {
-        'label': '导航',
-        'B_mean': 0.60, 'B_std': 0.04,
-        'u_mean': 0.20, 'u_std': 0.03,
-        'r_mean': 0.10, 'r_std': 0.02,
-        'net_state': '4G_LTE_A', 'gps_state': 'locating',
-        'dur_mean': 1200.0, 'dur_std': 600.0,
-    },
-    'calling': {
-        'label': '打电话',
-        'B_mean': 0.0, 'B_std': 0.0,
-        'u_mean': 0.10, 'u_std': 0.02,
-        'r_mean': 0.10, 'r_std': 0.03,
-        'net_state': '4G_LTE_A', 'gps_state': 'off',
-        'dur_mean': 180.0, 'dur_std': 90.0,
-    },
-    'music': {
-        'label': '听音乐(屏关)',
-        'B_mean': 0.0, 'B_std': 0.0,
-        'u_mean': 0.07, 'u_std': 0.02,
-        'r_mean': 0.30, 'r_std': 0.08,
-        'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 240.0, 'dur_std': 60.0,
-    },
-    'bg_download': {
-        'label': '后台下载',
-        'B_mean': 0.0, 'B_std': 0.0,
-        'u_mean': 0.05, 'u_std': 0.01,
-        'r_mean': 0.80, 'r_std': 0.10,
-        'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 900.0, 'dur_std': 450.0,
-    },
-    'bg_sync': {
-        'label': '后台同步',
-        'B_mean': 0.0, 'B_std': 0.0,
-        'u_mean': 0.02, 'u_std': 0.005,
-        'r_mean': 0.25, 'r_std': 0.08,
-        'net_state': 'WIFI6', 'gps_state': 'off',
-        'dur_mean': 120.0, 'dur_std': 60.0,
+        'dur_mean': 4800.0, 'dur_std': 2400.0,
     },
 }
 
 APP_TYPE_KEYS  = list(APP_TYPES.keys())
-APP_TYPE_PROBS = np.array([0.22, 0.13, 0.20, 0.08, 0.07, 0.10, 0.10, 0.10])
+APP_TYPE_PROBS = np.array([0.22])
 APP_TYPE_PROBS /= APP_TYPE_PROBS.sum()
 
 
@@ -242,13 +186,14 @@ def calc_p1(T, Q_discharged):
     这里严格按用户提供的字面公式实现:
     P1 = 0.5385 + 6.234e-4*T - 2.608e-7 + 2.191e-5*T^2 + 8.627e-8*T*Q + 8.928e-11*Q^2
     """
-    T2 = T * T
+    T_clip = np.clip(T, -50.0, 120.0)
+    T2 = T_clip * T_clip
     Q2 = Q_discharged * Q_discharged
     return (0.5385
-            + 6.234e-4   * T
+            + 6.234e-4   * T_clip
             - 2.608e-7                       # 常数修正项（按用户字面公式）
             + 2.191e-5   * T2
-            + 8.627e-8   * T * Q_discharged
+            + 8.627e-8   * T_clip * Q_discharged
             + 8.928e-11  * Q2)
 
 
@@ -258,14 +203,15 @@ def calc_p2(T, Q_discharged):
     P2 = -3.189e-11 + 9.634e-13*T - 5.539e-16*T*Q - 3.508e-16*T^3
          + 2.347e-17*T^2*Q + 1.431e-20*T*Q^2 - 2.504e-19*T^3*Q - 4.219e-22*T^2*Q^2
     """
-    T2 = T * T;   T3 = T2 * T
+    T_clip = np.clip(T, -50.0, 120.0)
+    T2 = T_clip * T_clip;   T3 = T2 * T_clip
     Q2 = Q_discharged * Q_discharged
     return (-3.189e-11
-            + 9.634e-13  * T
-            - 5.539e-16  * T  * Q_discharged
+            + 9.634e-13  * T_clip
+            - 5.539e-16  * T_clip  * Q_discharged
             - 3.508e-16  * T3
             + 2.347e-17  * T2 * Q_discharged
-            + 1.431e-20  * T  * Q2
+            + 1.431e-20  * T_clip  * Q2
             - 2.504e-19  * T3 * Q_discharged
             - 4.219e-22  * T2 * Q2)
 
@@ -275,7 +221,8 @@ def calc_lambda1(T):
     lambda1(T) = (-6.573e-5*T^2 + 5.767e-3*T - 0.3226) * 2
     单位: Ah^-1 (与放电量 q 相乘后无量纲)
     """
-    return (-6.573e-5 * T * T + 5.767e-3 * T - 0.3226) * 2.0
+    T_clip = np.clip(T, -50.0, 120.0)
+    return (-6.573e-5 * T_clip * T_clip + 5.767e-3 * T_clip - 0.3226) * 2.0
 
 
 def calc_lambda2(Q_aging):
@@ -390,9 +337,11 @@ def run_parallel_simulation(Q_aging, T_sim=86400, dt=10.0):
         lam1_val= calc_lambda1(Temp)
         # lam2 已在外层预算（仅依赖 Q_aging）
 
-        # OCV
-        Voc = (p1_val * (np.exp(lam1_val * q) - 1)
-             + p2_val * (np.exp(lam2      * q) - 1)
+        # OCV — 为避免指数溢出，限制指数的输入范围
+        x1 = np.clip(lam1_val * q, -50.0, 50.0)
+        x2 = np.clip(lam2      * q, -50.0, 50.0)
+        Voc = (p1_val * (np.exp(x1) - 1)
+             + p2_val * (np.exp(x2) - 1)
              + 4.2)
 
         # 恒功率求 IL
@@ -401,40 +350,73 @@ def run_parallel_simulation(Q_aging, T_sim=86400, dt=10.0):
         if disc < 0:
             disc = 0.0
         IL = (Vt - np.sqrt(disc)) / (2 * R0)
-        IL = max(IL, 0.0)
+        IL = np.clip(IL, 0.0, 100.0)  # 限制电流防止异常大
 
         # 负载端电压和损耗
         VL    = Voc - v - IL * R0
         Ploss = Voc * IL - VL * IL   # = IL²R0 + Vrc·IL
+        # 限制 Ploss 防止数值发散
+        Ploss = np.clip(Ploss, -1e3, 1e3)
 
         dsdt   = -IL / Qeff / 3600.0
         dVrcdt = (IL * R1 - v) / gamma
 
         return dsdt, dVrcdt, IL, Voc, VL, Ploss
 
-    # ---- RK4 积分一步（仅 soc, Vrc） ----
-    def rk4_step_ecm(soc_in, Vrc_in, Temp, P_load, h_step):
-        ds1, dv1, _, _, _, _ = deriv_ecm(soc_in, Vrc_in, Temp, P_load)
-        ds2, dv2, _, _, _, _ = deriv_ecm(soc_in+0.5*h_step*ds1, Vrc_in+0.5*h_step*dv1, Temp, P_load)
-        ds3, dv3, _, _, _, _ = deriv_ecm(soc_in+0.5*h_step*ds2, Vrc_in+0.5*h_step*dv2, Temp, P_load)
-        ds4, dv4, _, _, _, _ = deriv_ecm(soc_in+h_step*ds3,     Vrc_in+h_step*dv3,     Temp, P_load)
-
-        soc_out = soc_in + (h_step/6)*(ds1 + 2*ds2 + 2*ds3 + ds4)
-        Vrc_out = Vrc_in + (h_step/6)*(dv1 + 2*dv2 + 2*dv3 + dv4)
-
-        # 终点回算物理量
-        _, _, IL_end, Voc_end, VL_end, Ploss_end = deriv_ecm(soc_out, Vrc_out, Temp, P_load)
-        return soc_out, Vrc_out, IL_end, Voc_end, VL_end, Ploss_end
-
-    # ---- 半隐式热模型更新 ----
-    def update_thermal(T_in, Q_source, h_step):
+    # ---- RK4 积分一步（soc, Vrc, T） ----
+    # 整合电化学ECM + 一阶热模型（全部使用RK4数值积分）
+    def rk4_step_ecm(soc_in, Vrc_in, Temp_in, P_load, Q_other, h_step):
         """
-        精确解: T_new = T_ss + (T_in - T_ss)*exp(-h_step/tau)
-        Q_source: 当前时步的总热源功率 (W)
+        使用RK4对耦合状态 [soc, Vrc, T] 进行数值积分。
+
+        参数:
+            soc_in: 初始 SOC
+            Vrc_in: 初始 Vrc
+            Temp_in: 初始温度
+            P_load: 负载功率
+            Q_other: 热源中不依赖 Ploss 的部分（W），即 W_CPU*P_cpu_e + W_SCREEN*P_scr_e + W_NET*P_net_e + W_GPS*P_gps_e
+            h_step: 时步长度(s)
+
+        返回:
+            soc_out, Vrc_out, Temp_out, IL_end, Voc_end, VL_end, Ploss_end
         """
-        T_ss  = Tamb + Q_source / h_th
-        T_new = T_ss + (T_in - T_ss) * np.exp(-h_step / tau_th)
-        return T_new
+        # 内部：给定 (s,v,T) 返回三元导数及 Ploss
+        def deriv_total(s, v, T):
+            dsdt, dVrcdt, IL, Voc, VL, Ploss = deriv_ecm(s, v, T, P_load)
+            Q_source = W_LOSS * Ploss + Q_other
+            # 防止热源异常大导致温度发散，限制 Q_source
+            Q_source = np.clip(Q_source, -1e3, 1e3)
+            dTdt = (Q_source - h_th * (T - Tamb)) / Cth
+            # 限制温度变化率防止 RK4 中间阶段爆炸（K/s）
+            dTdt = np.clip(dTdt, -10.0, 10.0)
+            return dsdt, dVrcdt, dTdt, IL, Voc, VL, Ploss
+
+        # RK4 四阶积分（耦合三维）
+        ds1, dv1, dT1, _, _, _, _ = deriv_total(soc_in, Vrc_in, Temp_in)
+
+        s2 = soc_in  + 0.5 * h_step * ds1
+        v2 = Vrc_in  + 0.5 * h_step * dv1
+        T2 = np.clip(Temp_in + 0.5 * h_step * dT1, -50.0, 120.0)
+        ds2, dv2, dT2, _, _, _, _ = deriv_total(s2, v2, T2)
+
+        s3 = soc_in  + 0.5 * h_step * ds2
+        v3 = Vrc_in  + 0.5 * h_step * dv2
+        T3 = np.clip(Temp_in + 0.5 * h_step * dT2, -50.0, 120.0)
+        ds3, dv3, dT3, _, _, _, _ = deriv_total(s3, v3, T3)
+
+        s4 = soc_in  + h_step * ds3
+        v4 = Vrc_in  + h_step * dv3
+        T4 = np.clip(Temp_in + h_step * dT3, -50.0, 120.0)
+        ds4, dv4, dT4, _, _, _, _ = deriv_total(s4, v4, T4)
+
+        soc_out  = soc_in + (h_step/6.0) * (ds1 + 2*ds2 + 2*ds3 + ds4)
+        Vrc_out  = Vrc_in + (h_step/6.0) * (dv1 + 2*dv2 + 2*dv3 + dv4)
+        Temp_out = Temp_in + (h_step/6.0) * (dT1 + 2*dT2 + 2*dT3 + dT4)
+
+        # 终点回算物理量（使用终点温度）
+        _, _, IL_end, Voc_end, VL_end, Ploss_end = deriv_ecm(soc_out, Vrc_out, Temp_out, P_load)
+        return soc_out, Vrc_out, Temp_out, IL_end, Voc_end, VL_end, Ploss_end
+
 
     # =========== 主仿真循环 ===========
     for i in range(n_steps):
@@ -477,19 +459,16 @@ def run_parallel_simulation(Q_aging, T_sim=86400, dt=10.0):
             P_net_arr   = P_net_arr[:i]; P_gps_arr  = P_gps_arr[:i]
             break
 
-        # ── Step 5: RK4 积分 ECM（soc, Vrc） ──
-        soc_new, Vrc_new, IL_val, Voc_val, VL_val, Ploss_val = \
-            rk4_step_ecm(soc, Vrc, T, P_load, dt)
-        soc_new = max(soc_new, 0.05)
+        # ── Step 5: 计算热源中不依赖 Ploss 的部分（Q_other），并使用RK4求解耦合态
+        # Q_other 包含各模块对热源的贡献，但不含 W_LOSS*Ploss
+        Q_other = (W_CPU    * P_cpu_e
+                 + W_SCREEN * P_scr_e
+                 + W_NET    * P_net_e
+                 + W_GPS    * P_gps_e)
 
-        # ── Step 6: 半隐式热模型更新 ──
-        # 热源 = 电池损耗 + 加权模块功耗
-        Q_source = (W_LOSS   * Ploss_val
-                  + W_CPU    * P_cpu_e
-                  + W_SCREEN * P_scr_e
-                  + W_NET    * P_net_e
-                  + W_GPS    * P_gps_e)
-        T_new = update_thermal(T, Q_source, dt)
+        soc_new, Vrc_new, T_new, IL_val, Voc_val, VL_val, Ploss_val = \
+            rk4_step_ecm(soc, Vrc, T, P_load, Q_other, dt)
+        soc_new = max(soc_new, 0.05)
 
         # 记录
         soc_arr[i]      = soc
