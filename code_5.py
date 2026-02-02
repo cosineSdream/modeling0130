@@ -64,10 +64,10 @@ NET_PARAMS = {
 }
 GPS_POWER = {'off': 0.0, 'on': 49.2, 'locating': 444.9}
 
-def calc_P_screen(B):
+def calc_P_screen(B,bs):
     return bs * B * S_screen
 
-def calc_P_cpu(u):
+def calc_P_cpu(u,Pcpumax, b_cpu):
     return b_cpu + (Pcpumax - b_cpu) * u
 
 def calc_P_net(net_state, r):
@@ -242,20 +242,20 @@ def lambda_total(t_sec):
 # ===============================================================
 # 基础待机功耗
 # ===============================================================
-def calc_P_base():
-    return calc_P_screen(0.0) + calc_P_cpu(0.02) + calc_P_net('WIFI6', 0.0) + calc_P_gps('off')
+def calc_P_base(bs, Pcpumax, b_cpu):
+    return calc_P_screen(0.0,bs) + calc_P_cpu(0.02,Pcpumax,b_cpu) + calc_P_net('WIFI6', 0.0) + calc_P_gps('off')
 
-P_BASE = calc_P_base()
+P_BASE = calc_P_base(bs, Pcpumax, b_cpu)
 print(f"\n基础待机功耗 P_base = {P_BASE*1000:.2f} mW\n")
 
 
 # ===============================================================
 # 事件功耗贡献（增量，去除 base 部分）
 # ===============================================================
-def calc_event_power(event):
+def calc_event_power(event, bs, Pcpumax, b_cpu):
     app = APP_TYPES[event['app_type']]
-    P_scr     = calc_P_screen(event['B'])
-    P_cpu_inc = calc_P_cpu(event['u'])   - calc_P_cpu(0.02)
+    P_scr     = calc_P_screen(event['B'],bs)
+    P_cpu_inc = calc_P_cpu(event['u'],Pcpumax,b_cpu)   - calc_P_cpu(0.02,Pcpumax,b_cpu)
     P_net_inc = calc_P_net(app['net_state'], event['r']) - calc_P_net('WIFI6', 0.0)
     P_gps_inc = calc_P_gps(app['gps_state']) - calc_P_gps('off')
     return max(P_scr + P_cpu_inc + P_net_inc + P_gps_inc, 0.0)
@@ -293,9 +293,9 @@ def sample_event(t_start, app_type):
 # ===============================================================
 # 热模型参数
 # ===============================================================
-Cth  = 40.0    # J/K  热容
-Tamb = 25.0    # °C   环境温度
-h_th = 20.0*0.0128    # W/K  散热系数
+#Cth  = 40.0    # J/K  热容
+#Tamb = 25.0    # °C   环境温度
+#h_th = 20.0*0.0128    # W/K  散热系数
 
 # 热贡献权重系数
 W_LOSS   = 1.0
@@ -359,19 +359,19 @@ def calc_Qeff(Q_aging):
 # ===============================================================
 # 分解各模块功耗
 # ===============================================================
-def calc_module_powers(active_set):
+def calc_module_powers(active_set,bs, Pcpumax, b_cpu):   
     P_cpu  = 0.0
     P_scr  = 0.0
     P_net  = 0.0
     P_gps  = 0.0
     for ev in active_set:
         app = APP_TYPES[ev['app_type']]
-        P_scr  += calc_P_screen(ev['B'])
-        P_cpu  += calc_P_cpu(ev['u']) - calc_P_cpu(0.02)
+        P_scr  += calc_P_screen(ev['B'],bs)
+        P_cpu  += calc_P_cpu(ev['u'],Pcpumax,b_cpu) - calc_P_cpu(0.02,Pcpumax,b_cpu)
         P_net  += calc_P_net(app['net_state'], ev['r']) - calc_P_net('WIFI6', 0.0)
         P_gps  += calc_P_gps(app['gps_state']) - calc_P_gps('off')
-    P_cpu  += calc_P_cpu(0.02)
-    P_scr  += calc_P_screen(0.0)
+    P_cpu  += calc_P_cpu(0.02,Pcpumax,b_cpu)
+    P_scr  += calc_P_screen(0.0,bs)
     P_net  += calc_P_net('WIFI6', 0.0)
     P_gps  += calc_P_gps('off')
     return P_cpu, P_scr, P_net, P_gps
@@ -380,7 +380,7 @@ def calc_module_powers(active_set):
 # ===============================================================
 # 核心仿真函数（联合泊松过程版本）
 # ===============================================================
-def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
+def run_joint_poisson_simulation(Q_aging, T_sim, dt, bs, Pcpumax, b_cpu, Cth, Tamb, h_th):
     """
     联合泊松过程 + Thevenin ECM + 一阶热模型 耦合仿真
     
@@ -395,9 +395,9 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
         dt: 时间步长（秒）
     """
     Qeff   = calc_Qeff(Q_aging)
-    tau_th = Cth / h_th
+    #tau_th = Cth / h_th
     lam2   = calc_lambda2(Q_aging)
-
+    #print(Cth)
     # 时间序列初始化
     n_steps = int(T_sim / dt)
     t_arr       = np.zeros(n_steps)
@@ -465,8 +465,8 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
         return dsdt, dVrcdt, IL, Voc, VL, Ploss
 
     # RK4 积分
-    def rk4_step_ecm(soc_in, Vrc_in, Temp_in, P_load, Q_other, h_step):
-        def deriv_total(s, v, T):
+    def rk4_step_ecm(soc_in, Vrc_in, Temp_in, P_load, Q_other, h_step,Cth,Tamb,h_th):
+        def deriv_total(s, v, T, P_load = P_load, Q_other=Q_other, Cth=Cth, Tamb=Tamb, h_th=h_th):
             dsdt, dVrcdt, IL, Voc, VL, Ploss = deriv_ecm(s, v, T, P_load)
             Q_source = W_LOSS * Ploss + Q_other
             Q_source = np.clip(Q_source, -1e3, 1e3)
@@ -474,22 +474,22 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
             dTdt = np.clip(dTdt, -10.0, 10.0)
             return dsdt, dVrcdt, dTdt, IL, Voc, VL, Ploss
 
-        ds1, dv1, dT1, _, _, _, _ = deriv_total(soc_in, Vrc_in, Temp_in)
+        ds1, dv1, dT1, _, _, _, _ = deriv_total(soc_in, Vrc_in, Temp_in, P_load, Q_other, Cth, Tamb, h_th)
 
         s2 = soc_in  + 0.5 * h_step * ds1
         v2 = Vrc_in  + 0.5 * h_step * dv1
         T2 = np.clip(Temp_in + 0.5 * h_step * dT1, -50.0, 120.0)
-        ds2, dv2, dT2, _, _, _, _ = deriv_total(s2, v2, T2)
+        ds2, dv2, dT2, _, _, _, _ = deriv_total(s2, v2, T2, P_load, Q_other, Cth, Tamb, h_th)
 
         s3 = soc_in  + 0.5 * h_step * ds2
         v3 = Vrc_in  + 0.5 * h_step * dv2
         T3 = np.clip(Temp_in + 0.5 * h_step * dT2, -50.0, 120.0)
-        ds3, dv3, dT3, _, _, _, _ = deriv_total(s3, v3, T3)
+        ds3, dv3, dT3, _, _, _, _ = deriv_total(s3, v3, T3, P_load, Q_other, Cth, Tamb, h_th)
 
         s4 = soc_in  + h_step * ds3
         v4 = Vrc_in  + h_step * dv3
         T4 = np.clip(Temp_in + h_step * dT3, -50.0, 120.0)
-        ds4, dv4, dT4, _, _, _, _ = deriv_total(s4, v4, T4)
+        ds4, dv4, dT4, _, _, _, _ = deriv_total(s4, v4, T4, P_load, Q_other, Cth, Tamb, h_th)
 
         soc_out  = soc_in + (h_step/6.0) * (ds1 + 2*ds2 + 2*ds3 + ds4)
         Vrc_out  = Vrc_in + (h_step/6.0) * (dv1 + 2*dv2 + 2*dv3 + dv4)
@@ -533,9 +533,9 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
         active_set = still_active
 
         # ── Step 3: 计算总负载和各模块功耗 ──
-        P_events = sum(calc_event_power(ev) for ev in active_set)
+        P_events = sum(calc_event_power(ev,bs,Pcpumax,b_cpu) for ev in active_set)
         P_load   = P_BASE + P_events
-        P_cpu_e, P_scr_e, P_net_e, P_gps_e = calc_module_powers(active_set)
+        P_cpu_e, P_scr_e, P_net_e, P_gps_e = calc_module_powers(active_set,bs,Pcpumax,b_cpu)
 
         # ── Step 4: 检查 SOC 截止 ──
         if soc <= 0.05:
@@ -555,7 +555,8 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
                  + W_GPS    * P_gps_e)
 
         soc_new, Vrc_new, T_new, IL_val, Voc_val, VL_val, Ploss_val = \
-            rk4_step_ecm(soc, Vrc, T, P_load, Q_other, dt)
+            rk4_step_ecm(soc, Vrc, T, P_load, Q_other, dt, Cth, Tamb, h_th)
+        #print(Cth)
         soc_new = max(soc_new, 0.05)
 
         # 记录
@@ -986,20 +987,20 @@ dt = 10.0  # 时间步长
 # 定义用于敏感性分析的可变参数
 params = {
     'bs': [2.464, 3.0, 4.0],  # 屏幕亮度常数
-    'Pcpumax': [4.0, 5.0, 6.0],  # 最大CPU功率
-    'b_cpu': [0.1, 0.2, 0.3],  # CPU功率系数
-    'Cth': [40.0, 45.0, 50.0],  # 热容
-    'Tamb': [25.0, 30.0, 35.0],  # 环境温度
-    'h_th': [0.0128, 0.015, 0.018],  # 散热系数
-    'Q_aging': [0, 100, 500, 1000, 5000],  # 电池老化量
+    'Pcpumax': [4.0, 5.0, 6.0,2.0],  # 最大CPU功率
+    'b_cpu': [0.1, 0.2, 0.3,0.05],  # CPU功率系数
+    'Cth': [40.0, 0.5, 40e-4],  # 热容
+    'Tamb': [25.0, -10.0, 60.0],  # 环境温度
+    'h_th': [20*0.0128,20*0.001, 20*0.04],  # 散热系数
 }
 
 # 用来计算“time to empty”的辅助函数
-def calculate_time_to_empty(Q_aging, bs, Pcpumax, b_cpu, Cth, Tamb, h_th):
+def calculate_time_to_empty(bs, Pcpumax, b_cpu, Cth, Tamb, h_th):
     """
     使用run_joint_poisson_simulation来计算时间直到电池耗尽
     """
-    result = run_joint_poisson_simulation(Q_aging=Q_aging, T_sim=T_sim, dt=dt)
+    
+    result = run_joint_poisson_simulation(Q_aging=0, T_sim=T_sim, dt=dt, bs=bs, Pcpumax=Pcpumax, b_cpu=b_cpu, Cth=Cth, Tamb=Tamb, h_th=h_th)
     return result['discharge_time_h']  # 返回耗尽时间（小时）
 
 # 进行敏感性分析
@@ -1010,11 +1011,23 @@ def perform_sensitivity_analysis():
     # 存储每个参数对time to empty的影响
     sensitivity_results = []
 
+    # 计算基准量（使用原始参数值）
+    base_time_to_empty = calculate_time_to_empty(
+        bs=2.464,  # 屏幕亮度
+        Pcpumax=4.0,  # 最大CPU功率
+        b_cpu=0.1,  # CPU功率系数
+        Cth=40.0,  # 热容
+        Tamb=25.0,  # 环境温度
+        h_th=20*0.0128  # 散热系数
+    )
+    
     # 对每个参数进行敏感性分析
     for param_name, param_values in params.items():
         time_to_empty_results = []
+          # 保持随机种子一致以减少随机性影响
         
         for value in param_values:
+            np.random.seed(42)
             # 修改一个参数值并进行仿真
             # 注意：其它参数保持初始值
             modified_params = {
@@ -1023,14 +1036,12 @@ def perform_sensitivity_analysis():
                 'b_cpu': 0.1,  # 使用默认值
                 'Cth': 40.0,  # 使用默认值
                 'Tamb': 25.0,  # 使用默认值
-                'h_th': 0.0128,  # 使用默认值
-                'Q_aging': 100,  # 使用默认值
+                'h_th': 20*0.0128,  # 使用默认值
             }
             modified_params[param_name] = value
             
             # 运行仿真并计算“time to empty”
             time_to_empty = calculate_time_to_empty(
-                Q_aging=modified_params['Q_aging'],
                 bs=modified_params['bs'],
                 Pcpumax=modified_params['Pcpumax'],
                 b_cpu=modified_params['b_cpu'],
@@ -1038,7 +1049,9 @@ def perform_sensitivity_analysis():
                 Tamb=modified_params['Tamb'],
                 h_th=modified_params['h_th']
             )
-            time_to_empty_results.append(time_to_empty)
+            # 计算差值（time to empty 减去基准量）
+            time_to_empty_diff = time_to_empty - base_time_to_empty
+            time_to_empty_results.append(time_to_empty_diff)
         
         sensitivity_results.append((param_name, param_values, time_to_empty_results))
     
@@ -1047,19 +1060,32 @@ def perform_sensitivity_analysis():
 
     # 横轴：time to empty的变化
     for i, (param_name, param_values, time_to_empty_results) in enumerate(sensitivity_results):
-        ax.barh(
+        bars = ax.barh(
             [f"{param_name}: {v}" for v in param_values], 
             time_to_empty_results,
             label=param_name
         )
 
-    ax.set_xlabel('Time to Empty (hours)')
-    ax.set_title('Sensitivity Analysis of Battery Life')
+        # Adding value labels to the bars
+        for bar in bars:
+            ax.text(
+                bar.get_width(),  # x position of label (end of the bar)
+                bar.get_y() + bar.get_height() / 2,  # y position (center of the bar)
+                f'{bar.get_width():.2f}',  # Format the value to 2 decimal places
+                va='center',  # Vertically center the text
+                ha='left',  # Align text to the left
+                color='black'  # Text color
+            )
+
+    ax.set_xlabel('Change in Time to Empty (hours)')
+    ax.set_title('Sensitivity Analysis of Battery Life (Difference from Base)')
     ax.legend(title="Parameters", loc='best')
     plt.tight_layout()
     plt.show()
 
+
 # 执行敏感性分析
 perform_sensitivity_analysis()
+
 
 

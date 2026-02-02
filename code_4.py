@@ -675,8 +675,7 @@ axes1[1].set_xticks(range(0, 25, 2))
 axes1[1].grid(True, alpha=0.3)
 axes1[1].axvspan(0, 7, alpha=0.08, color='gray', label='Late night/early morning')
 axes1[1].axvspan(22, 24, alpha=0.08, color='gray')
-axes1[1].legend(fontsize=10)
-
+axes1[1].legend(fontsize=10, loc='upper left')  # bbox_to_anchor places the legend outside the plot
 plt.tight_layout()
 plt.show()
 
