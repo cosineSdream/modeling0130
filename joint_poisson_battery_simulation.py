@@ -88,7 +88,6 @@ APP_TYPES = {
         'r_mean': 0.70, 'r_std': 0.10,
         'net_state': 'WIFI6', 'gps_state': 'off',
         'dur_mean': 4800.0, 'dur_std': 2400.0,
-        # 独立到达率基础强度（相对权重）
         'lambda_weight': 0.22,
     },
     'gaming': {
@@ -158,7 +157,7 @@ APP_TYPES = {
 
 APP_TYPE_KEYS = list(APP_TYPES.keys())
 
-# 归一化权重，使其和为1
+# 归一化权重
 total_weight = sum(APP_TYPES[k]['lambda_weight'] for k in APP_TYPE_KEYS)
 for k in APP_TYPE_KEYS:
     APP_TYPES[k]['lambda_weight'] /= total_weight
@@ -168,53 +167,35 @@ for k in APP_TYPE_KEYS:
 # 联合泊松过程强度函数 λᵢ(t) - 每个应用类型独立
 # ===============================================================
 def lambda_intensity_per_app(t_sec, app_type):
-    """
-    每个应用类型的独立到达率函数 λᵢ(t)
-    
-    参数:
-        t_sec: 当前时间（秒）
-        app_type: 应用类型键值
-    
-    返回:
-        该应用类型在时间 t 的到达强度（events/hour）
-    """
+    """每个应用类型的独立到达率函数 λᵢ(t)"""
     app = APP_TYPES[app_type]
     t_h = (t_sec % 86400) / 3600.0
     
-    # 基础昼夜节律模式（所有应用共享）
-    peak1 = 8.0  * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)  # 午后高峰
-    peak2 = 10.0 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)  # 晚间高峰
+    # 基础昼夜节律模式
+    peak1 = 8.0  * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)
+    peak2 = 10.0 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)
     base_intensity = 0.5 + peak1 + peak2
     
     # 应用特定的时间偏好调制
     if app_type == 'video':
-        # 视频在晚间更活跃
         time_modulation = 1.0 + 0.5 * np.exp(-0.5 * ((t_h - 20.0) / 3.0)**2)
     elif app_type == 'gaming':
-        # 游戏在午后和晚间都活跃
         time_modulation = 1.0 + 0.3 * (np.exp(-0.5 * ((t_h - 15.0) / 2.5)**2) + 
                                         np.exp(-0.5 * ((t_h - 22.0) / 2.0)**2))
     elif app_type == 'social':
-        # 社交媒体全天较均匀，早晚略高
         time_modulation = 1.0 + 0.2 * (np.exp(-0.5 * ((t_h - 8.0) / 2.0)**2) + 
                                         np.exp(-0.5 * ((t_h - 19.0) / 2.5)**2))
     elif app_type == 'navigation':
-        # 导航在通勤时间高峰
         time_modulation = 1.0 + 0.8 * (np.exp(-0.5 * ((t_h - 8.0) / 1.5)**2) + 
                                         np.exp(-0.5 * ((t_h - 18.0) / 1.5)**2))
     elif app_type == 'calling':
-        # 通话在工作时间较多（使用logistic函数平滑过渡）
-        # logistic(x) = 1 / (1 + exp(-k*(x - x0)))
-        # 早上9点上升，下午18点下降
-        morning_factor = 1.0 / (1.0 + np.exp(-3.0 * (t_h - 9.0)))      # 9点处上升
-        evening_factor = 1.0 / (1.0 + np.exp(3.0 * (t_h - 18.0)))      # 18点处下降
-        time_modulation = 0.8 + 0.5 * morning_factor * evening_factor   # 0.8~1.3之间
+        morning_factor = 1.0 / (1.0 + np.exp(-3.0 * (t_h - 9.0)))
+        evening_factor = 1.0 / (1.0 + np.exp(3.0 * (t_h - 18.0)))
+        time_modulation = 0.8 + 0.5 * morning_factor * evening_factor
     elif app_type == 'music':
-        # 音乐播放在通勤和工作时间
         time_modulation = 1.0 + 0.4 * (np.exp(-0.5 * ((t_h - 8.5) / 2.0)**2) + 
                                         np.exp(-0.5 * ((t_h - 14.0) / 3.0)**2))
     elif app_type in ['bg_download', 'bg_sync']:
-        # 后台任务相对均匀，夜间略高
         if 1 <= t_h <= 6:
             time_modulation = 1.2
         else:
@@ -222,15 +203,11 @@ def lambda_intensity_per_app(t_sec, app_type):
     else:
         time_modulation = 1.0
     
-    # 最终强度 = 基础强度 × 应用权重 × 时间调制
     return base_intensity * app['lambda_weight'] * time_modulation
 
 
 def lambda_total(t_sec):
-    """
-    总到达率（所有独立泊松过程的和）
-    用于验证和可视化
-    """
+    """总到达率（所有独立泊松过程的和）"""
     return sum(lambda_intensity_per_app(t_sec, app) for app in APP_TYPE_KEYS)
 
 
@@ -245,7 +222,7 @@ print(f"\n基础待机功耗 P_base = {P_BASE*1000:.2f} mW\n")
 
 
 # ===============================================================
-# 事件功耗贡献（增量，去除 base 部分）
+# 事件功耗贡献
 # ===============================================================
 def calc_event_power(event):
     app = APP_TYPES[event['app_type']]
@@ -257,16 +234,10 @@ def calc_event_power(event):
 
 
 # ===============================================================
-# 事件采样（标记 M_k）
+# 事件采样
 # ===============================================================
 def sample_event(t_start, app_type):
-    """
-    为指定应用类型采样一个事件
-    
-    参数:
-        t_start: 事件开始时间
-        app_type: 应用类型键值
-    """
+    """为指定应用类型采样一个事件"""
     app = APP_TYPES[app_type]
 
     mean_d = app['dur_mean'];  std_d = app['dur_std']
@@ -288,27 +259,24 @@ def sample_event(t_start, app_type):
 # ===============================================================
 # 热模型参数
 # ===============================================================
-Cth  = 40.0    # J/K  热容
-Tamb = 25.0    # °C   环境温度
-h_th = 20.0    # W/K  散热系数
+Cth  = 40.0
+Tamb = 25.0
+h_th = 20.0
 
-# 热贡献权重系数
 W_LOSS   = 1.0
 W_CPU    = 1.0
 W_SCREEN = 0.3
 W_NET    = 0.7
 W_GPS    = 0.7
 
-# 老化量列表 (Ah)
 Q_AGING_LIST = [0.0, 100, 500, 1000, 5000]
 
-# Qeff 老化衰减比率
 QEFF_DECAY_RATIO = 1.314e-3
 QEFF_NOMINAL     = 5.0
 
 
 # ===============================================================
-# 温度/老化相关的 OCV 参数函数
+# OCV 参数函数
 # ===============================================================
 def calc_p1(T, Q_discharged):
     T_clip = np.clip(T, -50.0, 120.0)
@@ -373,44 +341,49 @@ def calc_module_powers(active_set):
 
 
 # ===============================================================
-# 核心仿真函数（联合泊松过程版本）
+# 核心仿真函数（改进版 - 细化时间步长）
 # ===============================================================
-def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
+def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt_sim=1.0, dt_ode=0.1, 
+                                   output_decimation=10):
     """
-    联合泊松过程 + Thevenin ECM + 一阶热模型 耦合仿真
+    联合泊松过程 + Thevenin ECM + 热模型耦合仿真（细化时间步长版本）
     
     核心改进：
-    1. 每个应用类型有独立的泊松过程
-    2. 各应用的到达率 λᵢ(t) 相互独立
-    3. 在每个时间步中，为每个应用类型独立检测事件到达
+    1. dt_sim: 仿真主循环时间步长（事件检测、功耗更新）
+    2. dt_ode: ODE求解器内部时间步长（RK4积分）
+    3. output_decimation: 输出抽取因子（减少存储）
     
     参数:
         Q_aging: 电池老化量 (Ah)
         T_sim: 仿真总时长（秒）
-        dt: 时间步长（秒）
+        dt_sim: 仿真时间步长（秒） - 默认1秒
+        dt_ode: ODE求解时间步长（秒） - 默认0.1秒
+        output_decimation: 每隔多少步输出一次（默认10，即每10步输出1次）
     """
     Qeff   = calc_Qeff(Q_aging)
-    tau_th = Cth / h_th
     lam2   = calc_lambda2(Q_aging)
 
-    # 时间序列初始化
-    n_steps = int(T_sim / dt)
-    t_arr       = np.zeros(n_steps)
-    soc_arr     = np.zeros(n_steps)
-    Vt_arr      = np.zeros(n_steps)
-    Voc_arr     = np.zeros(n_steps)
-    IL_arr      = np.zeros(n_steps)
-    Vrc_arr     = np.zeros(n_steps)
-    T_arr       = np.zeros(n_steps)
-    P_total_arr = np.zeros(n_steps)
-    P_loss_arr  = np.zeros(n_steps)
-    n_active_arr= np.zeros(n_steps)
-    P_cpu_arr   = np.zeros(n_steps)
-    P_scr_arr   = np.zeros(n_steps)
-    P_net_arr   = np.zeros(n_steps)
-    P_gps_arr   = np.zeros(n_steps)
+    # 仿真步数
+    n_steps_sim = int(T_sim / dt_sim)
     
-    # 每个应用类型的到达次数统计
+    # 输出数组大小（抽取后）
+    n_output = n_steps_sim // output_decimation + 1
+    
+    t_arr       = np.zeros(n_output)
+    soc_arr     = np.zeros(n_output)
+    Vt_arr      = np.zeros(n_output)
+    Voc_arr     = np.zeros(n_output)
+    IL_arr      = np.zeros(n_output)
+    Vrc_arr     = np.zeros(n_output)
+    T_arr       = np.zeros(n_output)
+    P_total_arr = np.zeros(n_output)
+    P_loss_arr  = np.zeros(n_output)
+    n_active_arr= np.zeros(n_output)
+    P_cpu_arr   = np.zeros(n_output)
+    P_scr_arr   = np.zeros(n_output)
+    P_net_arr   = np.zeros(n_output)
+    P_gps_arr   = np.zeros(n_output)
+    
     arrival_counts = {k: 0 for k in APP_TYPE_KEYS}
 
     # 状态初始化
@@ -422,6 +395,9 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
     active_set      = []
     event_log       = []
     app_active_time = {k: 0.0 for k in APP_TYPES}
+    
+    # 输出计数器
+    output_idx = 0
 
     # 电化学导数函数
     def deriv_ecm(s, v, Temp, P_load):
@@ -459,8 +435,29 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
 
         return dsdt, dVrcdt, IL, Voc, VL, Ploss
 
-    # RK4 积分
-    def rk4_step_ecm(soc_in, Vrc_in, Temp_in, P_load, Q_other, h_step):
+    # 多步RK4积分（从t到t+dt_sim，使用dt_ode作为内部步长）
+    def integrate_ode_multistep(soc_in, Vrc_in, Temp_in, P_load, Q_other, dt_total):
+        """
+        使用细时间步长 dt_ode 从当前状态积分 dt_total 时间
+        
+        参数:
+            soc_in, Vrc_in, Temp_in: 初始状态
+            P_load: 恒定负载功率（在dt_total内假设不变）
+            Q_other: 恒定热源（在dt_total内假设不变）
+            dt_total: 总积分时间（= dt_sim）
+        
+        返回:
+            积分后的状态和物理量
+        """
+        # 计算需要的ODE步数
+        n_ode_steps = int(np.ceil(dt_total / dt_ode))
+        dt_actual = dt_total / n_ode_steps  # 实际ODE步长（确保整除）
+        
+        s_curr = soc_in
+        v_curr = Vrc_in
+        T_curr = Temp_in
+        
+        # 定义耦合导数函数
         def deriv_total(s, v, T):
             dsdt, dVrcdt, IL, Voc, VL, Ploss = deriv_ecm(s, v, T, P_load)
             Q_source = W_LOSS * Ploss + Q_other
@@ -468,49 +465,57 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
             dTdt = (Q_source - h_th * (T - Tamb)) / Cth
             dTdt = np.clip(dTdt, -10.0, 10.0)
             return dsdt, dVrcdt, dTdt, IL, Voc, VL, Ploss
+        
+        # 多步RK4积分
+        for _ in range(n_ode_steps):
+            # RK4四阶
+            ds1, dv1, dT1, _, _, _, _ = deriv_total(s_curr, v_curr, T_curr)
+            
+            s2 = s_curr + 0.5 * dt_actual * ds1
+            v2 = v_curr + 0.5 * dt_actual * dv1
+            T2 = np.clip(T_curr + 0.5 * dt_actual * dT1, -50.0, 120.0)
+            ds2, dv2, dT2, _, _, _, _ = deriv_total(s2, v2, T2)
+            
+            s3 = s_curr + 0.5 * dt_actual * ds2
+            v3 = v_curr + 0.5 * dt_actual * dv2
+            T3 = np.clip(T_curr + 0.5 * dt_actual * dT2, -50.0, 120.0)
+            ds3, dv3, dT3, _, _, _, _ = deriv_total(s3, v3, T3)
+            
+            s4 = s_curr + dt_actual * ds3
+            v4 = v_curr + dt_actual * dv3
+            T4 = np.clip(T_curr + dt_actual * dT3, -50.0, 120.0)
+            ds4, dv4, dT4, _, _, _, _ = deriv_total(s4, v4, T4)
+            
+            # 更新状态
+            s_curr = s_curr + (dt_actual/6.0) * (ds1 + 2*ds2 + 2*ds3 + ds4)
+            v_curr = v_curr + (dt_actual/6.0) * (dv1 + 2*dv2 + 2*dv3 + dv4)
+            T_curr = T_curr + (dt_actual/6.0) * (dT1 + 2*dT2 + 2*dT3 + dT4)
+            T_curr = np.clip(T_curr, -50.0, 120.0)
+        
+        # 终点回算物理量
+        _, _, IL_end, Voc_end, VL_end, Ploss_end = deriv_ecm(s_curr, v_curr, T_curr, P_load)
+        
+        return s_curr, v_curr, T_curr, IL_end, Voc_end, VL_end, Ploss_end
 
-        ds1, dv1, dT1, _, _, _, _ = deriv_total(soc_in, Vrc_in, Temp_in)
 
-        s2 = soc_in  + 0.5 * h_step * ds1
-        v2 = Vrc_in  + 0.5 * h_step * dv1
-        T2 = np.clip(Temp_in + 0.5 * h_step * dT1, -50.0, 120.0)
-        ds2, dv2, dT2, _, _, _, _ = deriv_total(s2, v2, T2)
+    # =========== 主仿真循环 ===========
+    print(f"\n[仿真配置] dt_sim={dt_sim}s, dt_ode={dt_ode}s, 抽取因子={output_decimation}")
+    print(f"[仿真配置] 总步数={n_steps_sim}, 输出点数={n_output}")
+    print(f"[仿真配置] 每个仿真步内ODE子步数={int(dt_sim/dt_ode)}\n")
+    
+    for i in range(n_steps_sim):
+        t = i * dt_sim
 
-        s3 = soc_in  + 0.5 * h_step * ds2
-        v3 = Vrc_in  + 0.5 * h_step * dv2
-        T3 = np.clip(Temp_in + 0.5 * h_step * dT2, -50.0, 120.0)
-        ds3, dv3, dT3, _, _, _, _ = deriv_total(s3, v3, T3)
-
-        s4 = soc_in  + h_step * ds3
-        v4 = Vrc_in  + h_step * dv3
-        T4 = np.clip(Temp_in + h_step * dT3, -50.0, 120.0)
-        ds4, dv4, dT4, _, _, _, _ = deriv_total(s4, v4, T4)
-
-        soc_out  = soc_in + (h_step/6.0) * (ds1 + 2*ds2 + 2*ds3 + ds4)
-        Vrc_out  = Vrc_in + (h_step/6.0) * (dv1 + 2*dv2 + 2*dv3 + dv4)
-        Temp_out = Temp_in + (h_step/6.0) * (dT1 + 2*dT2 + 2*dT3 + dT4)
-
-        _, _, IL_end, Voc_end, VL_end, Ploss_end = deriv_ecm(soc_out, Vrc_out, Temp_out, P_load)
-        return soc_out, Vrc_out, Temp_out, IL_end, Voc_end, VL_end, Ploss_end
-
-
-    # =========== 主仿真循环（联合泊松过程） ===========
-    for i in range(n_steps):
-        t = i * dt
-        t_arr[i] = t
-
-        # ── Step 1: 联合泊松过程 - 为每个应用类型独立检测事件到达 ──
+        # ── Step 1: 联合泊松过程事件生成 ──
         for app_type in APP_TYPE_KEYS:
             lam_i = lambda_intensity_per_app(t, app_type)
-            p_arrive = lam_i * (dt / 3600.0)  # 转换为时间步内的概率
+            p_arrive = lam_i * (dt_sim / 3600.0)
             
-            # 泊松到达检测
             if p_arrive <= 0.5:
                 n_new = 1 if np.random.rand() < p_arrive else 0
             else:
                 n_new = np.random.poisson(p_arrive)
             
-            # 为该应用类型生成新事件
             for _ in range(n_new):
                 ev = sample_event(t, app_type)
                 active_set.append(ev)
@@ -524,96 +529,131 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
                 pass
             else:
                 still_active.append(ev)
-                app_active_time[ev['app_type']] += dt
+                app_active_time[ev['app_type']] += dt_sim
         active_set = still_active
 
-        # ── Step 3: 计算总负载和各模块功耗 ──
+        # ── Step 3: 计算当前功耗 ──
         P_events = sum(calc_event_power(ev) for ev in active_set)
         P_load   = P_BASE + P_events
         P_cpu_e, P_scr_e, P_net_e, P_gps_e = calc_module_powers(active_set)
 
-        # ── Step 4: 检查 SOC 截止 ──
+        # ── Step 4: SOC截止检查 ──
         if soc <= 0.05:
-            t_arr       = t_arr[:i];  soc_arr     = soc_arr[:i]
-            Vt_arr      = Vt_arr[:i]; Voc_arr     = Voc_arr[:i]
-            IL_arr      = IL_arr[:i]; Vrc_arr     = Vrc_arr[:i]
-            T_arr       = T_arr[:i];  P_total_arr = P_total_arr[:i]
-            P_loss_arr  = P_loss_arr[:i]; n_active_arr = n_active_arr[:i]
-            P_cpu_arr   = P_cpu_arr[:i]; P_scr_arr  = P_scr_arr[:i]
-            P_net_arr   = P_net_arr[:i]; P_gps_arr  = P_gps_arr[:i]
+            # 截断输出数组
+            t_arr       = t_arr[:output_idx]
+            soc_arr     = soc_arr[:output_idx]
+            Vt_arr      = Vt_arr[:output_idx]
+            Voc_arr     = Voc_arr[:output_idx]
+            IL_arr      = IL_arr[:output_idx]
+            Vrc_arr     = Vrc_arr[:output_idx]
+            T_arr       = T_arr[:output_idx]
+            P_total_arr = P_total_arr[:output_idx]
+            P_loss_arr  = P_loss_arr[:output_idx]
+            n_active_arr= n_active_arr[:output_idx]
+            P_cpu_arr   = P_cpu_arr[:output_idx]
+            P_scr_arr   = P_scr_arr[:output_idx]
+            P_net_arr   = P_net_arr[:output_idx]
+            P_gps_arr   = P_gps_arr[:output_idx]
             break
 
-        # ── Step 5: RK4求解耦合态 ──
+        # ── Step 5: 多步RK4积分（dt_sim时间，使用dt_ode子步长） ──
         Q_other = (W_CPU    * P_cpu_e
                  + W_SCREEN * P_scr_e
                  + W_NET    * P_net_e
                  + W_GPS    * P_gps_e)
 
         soc_new, Vrc_new, T_new, IL_val, Voc_val, VL_val, Ploss_val = \
-            rk4_step_ecm(soc, Vrc, T, P_load, Q_other, dt)
+            integrate_ode_multistep(soc, Vrc, T, P_load, Q_other, dt_sim)
+        
         soc_new = max(soc_new, 0.05)
 
-        # 记录
-        soc_arr[i]      = soc
-        Vrc_arr[i]      = Vrc
-        T_arr[i]        = T
-        Vt_arr[i]       = VL_val
-        Voc_arr[i]      = Voc_val
-        IL_arr[i]       = IL_val
-        P_total_arr[i]  = P_load
-        P_loss_arr[i]   = Ploss_val
-        n_active_arr[i] = len(active_set)
-        P_cpu_arr[i]    = P_cpu_e
-        P_scr_arr[i]    = P_scr_e
-        P_net_arr[i]    = P_net_e
-        P_gps_arr[i]    = P_gps_e
+        # ── Step 6: 输出抽取（每output_decimation步记录一次） ──
+        if i % output_decimation == 0:
+            t_arr[output_idx]       = t
+            soc_arr[output_idx]     = soc
+            Vrc_arr[output_idx]     = Vrc
+            T_arr[output_idx]       = T
+            Vt_arr[output_idx]      = VL_val
+            Voc_arr[output_idx]     = Voc_val
+            IL_arr[output_idx]      = IL_val
+            P_total_arr[output_idx] = P_load
+            P_loss_arr[output_idx]  = Ploss_val
+            n_active_arr[output_idx]= len(active_set)
+            P_cpu_arr[output_idx]   = P_cpu_e
+            P_scr_arr[output_idx]   = P_scr_e
+            P_net_arr[output_idx]   = P_net_e
+            P_gps_arr[output_idx]   = P_gps_e
+            output_idx += 1
 
-        # 推进
+        # ── Step 7: 状态推进 ──
         soc = soc_new
         Vrc = Vrc_new
         T   = T_new
+        
+        # 进度显示（每10%显示一次）
+        if i % (n_steps_sim // 10) == 0:
+            progress = 100 * i / n_steps_sim
+            print(f"  进度: {progress:.0f}% | SOC={soc:.3f} | T={T:.2f}°C | 活跃事件={len(active_set)}")
 
-    discharge_time_h = t_arr[-1] / 3600.0 if len(t_arr) > 0 else 0.0
+    discharge_time_h = t_arr[output_idx-1] / 3600.0 if output_idx > 0 else 0.0
 
     return {
-        't': t_arr, 'soc': soc_arr, 'Vt': Vt_arr, 'Voc': Voc_arr,
-        'IL': IL_arr, 'Vrc': Vrc_arr, 'T': T_arr,
-        'P_total': P_total_arr, 'P_loss': P_loss_arr,
-        'n_active': n_active_arr,
-        'P_cpu': P_cpu_arr, 'P_scr': P_scr_arr,
-        'P_net': P_net_arr, 'P_gps': P_gps_arr,
+        't': t_arr[:output_idx], 'soc': soc_arr[:output_idx], 
+        'Vt': Vt_arr[:output_idx], 'Voc': Voc_arr[:output_idx],
+        'IL': IL_arr[:output_idx], 'Vrc': Vrc_arr[:output_idx], 
+        'T': T_arr[:output_idx],
+        'P_total': P_total_arr[:output_idx], 'P_loss': P_loss_arr[:output_idx],
+        'n_active': n_active_arr[:output_idx],
+        'P_cpu': P_cpu_arr[:output_idx], 'P_scr': P_scr_arr[:output_idx],
+        'P_net': P_net_arr[:output_idx], 'P_gps': P_gps_arr[:output_idx],
         'event_log': event_log,
         'app_active_time': app_active_time,
         'arrival_counts': arrival_counts,
         'discharge_time_h': discharge_time_h,
         'Qeff': Qeff, 'Q_aging': Q_aging,
+        'dt_sim': dt_sim, 'dt_ode': dt_ode,
     }
 
 
 # ===============================================================
-# 运行所有老化水平的仿真
+# 运行仿真（细化时间步长）
 # ===============================================================
 print("=" * 70)
-print("运行联合泊松过程多老化水平仿真 ...")
+print("运行联合泊松过程仿真（细化时间步长版本）")
 print("=" * 70)
+
+# 仿真参数配置
+DT_SIM = 0.01            # 仿真主循环步长：1秒
+DT_ODE = 0.01            # ODE求解步长：0.1秒（比dt_sim小10倍）
+OUTPUT_DECIMATION = 1  # 输出抽取：每10步输出1次（即每10秒输出一次）
 
 all_results = {}
-for Q_ag in Q_AGING_LIST:
+for Q_ag in [0.0]:  # 先只运行新电池，测试性能
     np.random.seed(42)
     Qeff_val = calc_Qeff(Q_ag)
-    print(f"\n  Q_aging = {Q_ag:>7.1f} Ah,  Qeff = {Qeff_val:.4f} Ah")
-    res = run_joint_poisson_simulation(Q_aging=Q_ag, T_sim=86400, dt=10.0)
+    print(f"\n{'='*70}")
+    print(f"Q_aging = {Q_ag:>7.1f} Ah,  Qeff = {Qeff_val:.4f} Ah")
+    print(f"{'='*70}")
+    
+    res = run_joint_poisson_simulation(
+        Q_aging=Q_ag, 
+        T_sim=86400,              # 24小时
+        dt_sim=DT_SIM, 
+        dt_ode=DT_ODE,
+        output_decimation=OUTPUT_DECIMATION
+    )
     all_results[Q_ag] = res
-    print(f"    放电时间: {res['discharge_time_h']:.2f} h, "
-          f"最高温度: {res['T'].max():.2f} °C, "
-          f"平均负载: {np.mean(res['P_total'])*1000:.1f} mW")
-    print(f"    各应用到达次数: {res['arrival_counts']}")
-
-print("\n" + "=" * 70)
-
+    
+    print(f"\n{'='*70}")
+    print(f"仿真完成！")
+    print(f"  放电时间: {res['discharge_time_h']:.2f} h")
+    print(f"  最高温度: {res['T'].max():.2f} °C")
+    print(f"  平均负载: {np.mean(res['P_total'])*1000:.1f} mW")
+    print(f"  输出数据点: {len(res['t'])}")
+    print(f"{'='*70}\n")
 
 # ===============================================================
-# 颜色映射
+# 快速可视化（仅新电池）
 # ===============================================================
 APP_COLORS = {
     'video': '#e74c3c', 'gaming': '#9b59b6', 'social': '#3498db',
@@ -621,289 +661,53 @@ APP_COLORS = {
     'bg_download': '#2ecc71', 'bg_sync': '#95a5a6',
 }
 
-AGING_COLORS = {
-    0.0:    '#2ecc71',
-    100:   '#3498db',
-    500:   '#f39c12',
-    1000:  '#e67e22',
-    5000.0: '#e74c3c',
-}
+r = all_results[0.0]
+t_h = r['t'] / 3600.0
 
-AGING_LABELS = {
-    0.0:    '新电池 (Q=0)',
-    100.0: '轻度老化 (Q=100)',
-    500.0:   '中度老化 (Q=500)',
-    1000.0:  '重度老化 (Q=1000)',
-    5000.0: '极度老化 (Q=5000)',
-}
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+fig.suptitle(f'细化时间步长仿真结果 (dt_sim={DT_SIM}s, dt_ode={DT_ODE}s)', 
+             fontsize=14, fontweight='bold')
 
+# SOC
+axes[0,0].plot(t_h, r['soc'], linewidth=2, color='#2ecc71')
+axes[0,0].axhline(y=0.05, color='red', linestyle=':', linewidth=1.2)
+axes[0,0].set_xlabel('时间 (h)', fontsize=11)
+axes[0,0].set_ylabel('SOC', fontsize=11)
+axes[0,0].set_title('SOC 随时间变化', fontsize=12, fontweight='bold')
+axes[0,0].grid(True, alpha=0.3)
+axes[0,0].set_ylim(0, 1.05)
 
-# ===============================================================
-# 图 1: 联合泊松过程 - 各应用独立强度函数 λᵢ(t)
-# ===============================================================
-fig1, axes1 = plt.subplots(2, 1, figsize=(14, 10))
-fig1.suptitle('联合泊松过程：各应用类型独立到达率函数', fontsize=15, fontweight='bold')
+# 温度
+axes[0,1].plot(t_h, r['T'], linewidth=2, color='#e74c3c')
+axes[0,1].axhline(y=Tamb, color='gray', linestyle='--', linewidth=1)
+axes[0,1].set_xlabel('时间 (h)', fontsize=11)
+axes[0,1].set_ylabel('温度 (°C)', fontsize=11)
+axes[0,1].set_title('电池温度', fontsize=12, fontweight='bold')
+axes[0,1].grid(True, alpha=0.3)
 
-t_24h = np.linspace(0, 86400, 1000)
-t_h_arr = t_24h / 3600.0
+# 端电压
+axes[1,0].plot(t_h, r['Vt'], linewidth=1.8, color='#3498db')
+axes[1,0].set_xlabel('时间 (h)', fontsize=11)
+axes[1,0].set_ylabel('端电压 (V)', fontsize=11)
+axes[1,0].set_title('负载端电压', fontsize=12, fontweight='bold')
+axes[1,0].grid(True, alpha=0.3)
 
-# (0) 各应用独立强度
-for app_type in APP_TYPE_KEYS:
-    lam_vals = [lambda_intensity_per_app(t, app_type) for t in t_24h]
-    axes1[0].plot(t_h_arr, lam_vals, linewidth=2.0, 
-                  color=APP_COLORS[app_type], label=APP_TYPES[app_type]['label'])
-
-axes1[0].set_xlabel('时间 (h)', fontsize=11)
-axes1[0].set_ylabel('到达强度 λi(t) (events/h)', fontsize=11)
-axes1[0].set_title('各应用类型独立到达率', fontsize=12, fontweight='bold')
-axes1[0].set_xticks(range(0, 25, 2))
-axes1[0].legend(fontsize=9, loc='upper left', ncol=2)
-axes1[0].grid(True, alpha=0.3)
-
-# (1) 总到达率（所有应用的和）
-lam_total_vals = [lambda_total(t) for t in t_24h]
-axes1[1].fill_between(t_h_arr, lam_total_vals, alpha=0.3, color='#3498db')
-axes1[1].plot(t_h_arr, lam_total_vals, linewidth=2.5, color='#2980b9')
-axes1[1].set_xlabel('时间 (h)', fontsize=11)
-axes1[1].set_ylabel('总到达强度 Σλi(t) (events/h)', fontsize=11)
-axes1[1].set_title('联合泊松过程总到达率（所有应用的和）', fontsize=12, fontweight='bold')
-axes1[1].set_xticks(range(0, 25, 2))
-axes1[1].grid(True, alpha=0.3)
-axes1[1].axvspan(0, 7, alpha=0.08, color='gray', label='深夜/凌晨')
-axes1[1].axvspan(22, 24, alpha=0.08, color='gray')
-axes1[1].legend(fontsize=10)
+# 放电电流
+axes[1,1].plot(t_h, r['IL'], linewidth=1.0, color='#9b59b6', alpha=0.8)
+axes[1,1].set_xlabel('时间 (h)', fontsize=11)
+axes[1,1].set_ylabel('放电电流 (A)', fontsize=11)
+axes[1,1].set_title('放电电流', fontsize=12, fontweight='bold')
+axes[1,1].grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.show()
-
-
-# ===============================================================
-# 图 2: 多老化水平对比 — SOC / 温度 / 端电压 / 放电电流
-# ===============================================================
-fig2, axes2 = plt.subplots(2, 2, figsize=(16, 11))
-fig2.suptitle('不同老化水平下电池状态与温度演化对比（联合泊松过程）', fontsize=15, fontweight='bold')
-
-for Q_ag in Q_AGING_LIST:
-    r     = all_results[Q_ag]
-    t_h   = r['t'] / 3600.0
-    color = AGING_COLORS[Q_ag]
-    label = AGING_LABELS[Q_ag]
-
-    axes2[0,0].plot(t_h, r['soc'], linewidth=2, color=color, label=label)
-    axes2[0,1].plot(t_h, r['T'],   linewidth=2, color=color, label=label)
-    axes2[1,0].plot(t_h, r['Vt'],  linewidth=1.8, color=color, label=label)
-    axes2[1,1].plot(t_h, r['IL'],  linewidth=1.0, color=color, alpha=0.8, label=label)
-
-axes2[0,0].axhline(y=0.05, color='red', linestyle=':', linewidth=1.2, alpha=0.6)
-axes2[0,0].set_xlabel('时间 (h)', fontsize=11)
-axes2[0,0].set_ylabel('SOC', fontsize=11)
-axes2[0,0].set_title('SOC 随时间变化', fontsize=12, fontweight='bold')
-axes2[0,0].legend(fontsize=8, loc='best')
-axes2[0,0].grid(True, alpha=0.3)
-axes2[0,0].set_ylim(0, 1.05)
-
-axes2[0,1].axhline(y=Tamb, color='gray', linestyle='--', linewidth=1, label=f'环境温度 {Tamb}°C')
-axes2[0,1].set_xlabel('时间 (h)', fontsize=11)
-axes2[0,1].set_ylabel('温度 T (°C)', fontsize=11)
-axes2[0,1].set_title('电池温度随时间变化', fontsize=12, fontweight='bold')
-axes2[0,1].legend(fontsize=8, loc='best')
-axes2[0,1].grid(True, alpha=0.3)
-
-axes2[1,0].set_xlabel('时间 (h)', fontsize=11)
-axes2[1,0].set_ylabel('负载端电压 VL (V)', fontsize=11)
-axes2[1,0].set_title('端电压随时间变化', fontsize=12, fontweight='bold')
-axes2[1,0].legend(fontsize=8, loc='best')
-axes2[1,0].grid(True, alpha=0.3)
-
-axes2[1,1].set_xlabel('时间 (h)', fontsize=11)
-axes2[1,1].set_ylabel('放电电流 IL (A)', fontsize=11)
-axes2[1,1].set_title('放电电流随时间变化', fontsize=12, fontweight='bold')
-axes2[1,1].legend(fontsize=8, loc='best')
-axes2[1,1].grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-
-
-# ===============================================================
-# 图 3: Gantt 图 + 功耗叠加（新电池，展示联合泊松效果）
-# ===============================================================
-r_ref = all_results[0.0]
-t_end_sim = r_ref['t'][-1] if len(r_ref['t']) > 0 else 86400
-
-fig3, (ax_gantt, ax_power) = plt.subplots(2, 1, figsize=(16, 9),
-                                            gridspec_kw={'height_ratios': [2, 1]})
-fig3.suptitle('联合泊松过程：并行事件时间线与总功耗演化 (新电池)', fontsize=15, fontweight='bold')
-
-type_keys_ordered = list(APP_TYPES.keys())
-y_positions = {k: i for i, k in enumerate(type_keys_ordered)}
-
-for ev in r_ref['event_log']:
-    if ev['t_start'] >= t_end_sim:
-        continue
-    y     = y_positions[ev['app_type']]
-    x0    = ev['t_start'] / 3600.0
-    width = min(ev['duration'], t_end_sim - ev['t_start']) / 3600.0
-    ax_gantt.barh(y, width, left=x0, height=0.7,
-                  color=APP_COLORS[ev['app_type']], alpha=0.75,
-                  edgecolor='white', linewidth=0.4)
-
-ax_gantt.set_yticks(list(y_positions.values()))
-ax_gantt.set_yticklabels([APP_TYPES[k]['label'] for k in type_keys_ordered], fontsize=10)
-ax_gantt.set_xlabel('时间 (h)', fontsize=11)
-ax_gantt.set_title('各应用类型事件时间线（Gantt图）', fontsize=12)
-ax_gantt.grid(axis='x', alpha=0.3)
-ax_gantt.set_xlim(0, t_end_sim / 3600.0)
-legend_patches = [mpatches.Patch(color=APP_COLORS[k], label=APP_TYPES[k]['label'])
-                  for k in type_keys_ordered]
-ax_gantt.legend(handles=legend_patches, loc='upper left', fontsize=8, ncol=2)
-
-t_h = r_ref['t'] / 3600.0
-ax_power.plot(t_h, r_ref['P_total']*1000, linewidth=1.0, color='#e74c3c', alpha=0.7)
-ax_power.fill_between(t_h, P_BASE*1000, r_ref['P_total']*1000,
-                       alpha=0.25, color='#e74c3c', label='事件叠加功耗')
-ax_power.axhline(y=P_BASE*1000, color='#2c3e50', linestyle='--',
-                 linewidth=1.5, label=f'基础待机 {P_BASE*1000:.1f} mW')
-ax_power.set_xlabel('时间 (h)', fontsize=11)
-ax_power.set_ylabel('总负载 P(t) (mW)', fontsize=11)
-ax_power.set_title('总功耗随时间变化', fontsize=12)
-ax_power.legend(fontsize=9, loc='upper left')
-ax_power.grid(True, alpha=0.3)
-ax_power.set_xlim(0, t_end_sim / 3600.0)
-
-ax_n = ax_power.twinx()
-ax_n.plot(t_h, r_ref['n_active'], linewidth=1.2, color='#27ae60', alpha=0.8)
-ax_n.set_ylabel('活跃事件数', fontsize=11, color='#27ae60')
-ax_n.tick_params(axis='y', labelcolor='#27ae60')
-ax_n.set_ylim(0, max(r_ref['n_active'].max()+1, 6))
-
-plt.tight_layout()
-plt.show()
-
-
-# ===============================================================
-# 图 4: 联合泊松过程特有 - 各应用到达次数分布
-# ===============================================================
-fig4, axes4 = plt.subplots(1, 2, figsize=(16, 6))
-fig4.suptitle('联合泊松过程：各应用事件到达统计', fontsize=15, fontweight='bold')
-
-r_new = all_results[0.0]
-
-# (0) 各应用到达次数柱状图
-app_labels = [APP_TYPES[k]['label'] for k in APP_TYPE_KEYS]
-app_colors_list = [APP_COLORS[k] for k in APP_TYPE_KEYS]
-arrival_nums = [r_new['arrival_counts'][k] for k in APP_TYPE_KEYS]
-
-bars = axes4[0].bar(range(len(APP_TYPE_KEYS)), arrival_nums, 
-                     color=app_colors_list, edgecolor='#2c3e50', linewidth=0.7)
-for i, v in enumerate(arrival_nums):
-    axes4[0].text(i, v + 0.5, str(v), ha='center', va='bottom', 
-                   fontsize=9, fontweight='bold')
-axes4[0].set_xticks(range(len(APP_TYPE_KEYS)))
-axes4[0].set_xticklabels(app_labels, fontsize=9, rotation=30, ha='right')
-axes4[0].set_ylabel('到达次数', fontsize=11)
-axes4[0].set_title('各应用类型事件到达次数（24小时）', fontsize=12, fontweight='bold')
-axes4[0].grid(axis='y', alpha=0.3)
-
-# (1) 各应用活跃时间占比饼图
-active_times = [r_new['app_active_time'][k] for k in APP_TYPE_KEYS]
-total_active = sum(active_times)
-if total_active > 0:
-    percentages = [t/total_active*100 for t in active_times]
-    # 只显示活跃时间 > 0 的应用标签，其他设为空字符串
-    pie_labels = [app_labels[i] if active_times[i] > 0 else '' for i in range(len(APP_TYPE_KEYS))]
-    wedges, texts, autotexts = axes4[1].pie(percentages, labels=pie_labels, 
-                                              colors=app_colors_list,
-                                              autopct='%1.1f%%', startangle=90,
-                                              textprops={'fontsize': 9})
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontweight('bold')
-axes4[1].set_title('各应用活跃时间占比', fontsize=12, fontweight='bold')
-
-plt.tight_layout()
-plt.show()
-
-
-# ===============================================================
-# 图 5: 老化水平对比汇总柱状图
-# ===============================================================
-fig5, axes5 = plt.subplots(1, 3, figsize=(18, 5.5))
-fig5.suptitle('老化水平对比汇总（联合泊松过程）', fontsize=14, fontweight='bold')
-
-Q_labels  = [AGING_LABELS[q] for q in Q_AGING_LIST]
-Q_colors  = [AGING_COLORS[q] for q in Q_AGING_LIST]
-discharge_h  = [all_results[q]['discharge_time_h'] for q in Q_AGING_LIST]
-max_temps    = [all_results[q]['T'].max() for q in Q_AGING_LIST]
-Qeff_vals    = [calc_Qeff(q) for q in Q_AGING_LIST]
-
-# (0) 放电时间
-bars = axes5[0].bar(range(len(Q_AGING_LIST)), discharge_h, color=Q_colors,
-                    edgecolor='#2c3e50', linewidth=0.7)
-for i, v in enumerate(discharge_h):
-    axes5[0].text(i, v + 0.05, f'{v:.2f}h', ha='center', va='bottom', fontsize=9, fontweight='bold')
-axes5[0].set_xticks(range(len(Q_AGING_LIST)))
-axes5[0].set_xticklabels(Q_labels, fontsize=8, rotation=15)
-axes5[0].set_ylabel('放电时间 (h)', fontsize=11)
-axes5[0].set_title('各老化水平使用寿命', fontsize=12, fontweight='bold')
-axes5[0].grid(axis='y', alpha=0.3)
-
-# (1) 最高温度
-bars = axes5[1].bar(range(len(Q_AGING_LIST)), max_temps, color=Q_colors,
-                    edgecolor='#2c3e50', linewidth=0.7)
-for i, v in enumerate(max_temps):
-    axes5[1].text(i, v + 0.05, f'{v:.2f}°C', ha='center', va='bottom', fontsize=9, fontweight='bold')
-axes5[1].set_xticks(range(len(Q_AGING_LIST)))
-axes5[1].set_xticklabels(Q_labels, fontsize=8, rotation=15)
-axes5[1].set_ylabel('最高温度 (°C)', fontsize=11)
-axes5[1].set_title('各老化水平峰值温度', fontsize=12, fontweight='bold')
-axes5[1].axhline(y=Tamb, color='gray', linestyle=':', linewidth=1)
-axes5[1].grid(axis='y', alpha=0.3)
-
-# (2) 有效容量 Qeff
-bars = axes5[2].bar(range(len(Q_AGING_LIST)), Qeff_vals, color=Q_colors,
-                    edgecolor='#2c3e50', linewidth=0.7)
-for i, v in enumerate(Qeff_vals):
-    axes5[2].text(i, v + 0.02, f'{v:.3f}Ah', ha='center', va='bottom', fontsize=9, fontweight='bold')
-axes5[2].set_xticks(range(len(Q_AGING_LIST)))
-axes5[2].set_xticklabels(Q_labels, fontsize=8, rotation=15)
-axes5[2].set_ylabel('有效容量 Qeff (Ah)', fontsize=11)
-axes5[2].set_title('各老化水平有效容量', fontsize=12, fontweight='bold')
-axes5[2].axhline(y=QEFF_NOMINAL, color='gray', linestyle=':', linewidth=1, label=f'新电池 {QEFF_NOMINAL} Ah')
-axes5[2].legend(fontsize=9)
-axes5[2].grid(axis='y', alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-
-
-# ===============================================================
-# 最终汇总输出
-# ===============================================================
-print("\n" + "=" * 70)
-print("联合泊松过程各老化水平仿真汇总")
-print("=" * 70)
-print(f"{'老化水平':<22} {'Qeff(Ah)':>9} {'放电时间(h)':>12} {'平均负载(mW)':>13} "
-      f"{'最高温度(°C)':>13} {'最大并行':>8} {'总事件':>7}")
-print("-" * 95)
-for Q_ag in Q_AGING_LIST:
-    r = all_results[Q_ag]
-    print(f"{AGING_LABELS[Q_ag]:<22} "
-          f"{calc_Qeff(Q_ag):>8.4f} "
-          f"{r['discharge_time_h']:>11.2f} "
-          f"{np.mean(r['P_total'])*1000:>12.1f} "
-          f"{r['T'].max():>12.2f} "
-          f"{int(r['n_active'].max()):>7} "
-          f"{len(r['event_log']):>6}")
-print("=" * 95)
 
 print("\n" + "=" * 70)
 print("新电池各应用到达统计:")
 print("=" * 70)
-r_new = all_results[0.0]
 for app_type in APP_TYPE_KEYS:
     label = APP_TYPES[app_type]['label']
-    count = r_new['arrival_counts'][app_type]
-    active_time_h = r_new['app_active_time'][app_type] / 3600.0
+    count = r['arrival_counts'][app_type]
+    active_time_h = r['app_active_time'][app_type] / 3600.0
     print(f"  {label:<12}: 到达{count:>4}次, 活跃时长{active_time_h:>6.2f}h")
 print("=" * 70)
