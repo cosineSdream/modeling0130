@@ -986,12 +986,12 @@ dt = 10.0  # 时间步长
 
 # 定义用于敏感性分析的可变参数
 params = {
-    'bs': [2.464, 3.0, 4.0],  # 屏幕亮度常数
-    'Pcpumax': [4.0, 5.0, 6.0,2.0],  # 最大CPU功率
-    'b_cpu': [0.1, 0.2, 0.3,0.05],  # CPU功率系数
-    'Cth': [40.0, 0.5, 40e-4],  # 热容
-    'Tamb': [25.0, -10.0, 60.0],  # 环境温度
-    'h_th': [20*0.0128,20*0.001, 20*0.04],  # 散热系数
+    'bs': [2.464, 2.464*1.05, 2.464*0.95],  # 屏幕亮度常数
+    'Pcpumax': [4.0, 4.0*1.05, 4.0*0.95],  # 最大CPU功率
+    'b_cpu': [0.1, 0.1*1.05, 0.1*0.95],  # CPU功率系数
+    'Cth': [40.0, 40.0*1.05, 40.0*0.95],  # 热容
+    #'Tamb': [25.0, 25.0*1.5, 25.0*0.5],  # 环境温度
+    'h_th': [20*0.0128,20*0.0128*1.05, 20*0.0128*0.95],  # 散热系数
 }
 
 # 用来计算“time to empty”的辅助函数
@@ -1035,7 +1035,7 @@ def perform_sensitivity_analysis():
                 'Pcpumax': 4.0,  # 使用默认值
                 'b_cpu': 0.1,  # 使用默认值
                 'Cth': 40.0,  # 使用默认值
-                'Tamb': 25.0,  # 使用默认值
+                #'Tamb': 25.0,  # 使用默认值
                 'h_th': 20*0.0128,  # 使用默认值
             }
             modified_params[param_name] = value
@@ -1046,7 +1046,7 @@ def perform_sensitivity_analysis():
                 Pcpumax=modified_params['Pcpumax'],
                 b_cpu=modified_params['b_cpu'],
                 Cth=modified_params['Cth'],
-                Tamb=modified_params['Tamb'],
+                Tamb=25.0,  # 使用默认值
                 h_th=modified_params['h_th']
             )
             # 计算差值（time to empty 减去基准量）
@@ -1061,7 +1061,7 @@ def perform_sensitivity_analysis():
     # 横轴：time to empty的变化
     for i, (param_name, param_values, time_to_empty_results) in enumerate(sensitivity_results):
         bars = ax.barh(
-            [f"{param_name}: {v}" for v in param_values], 
+            [f"{param_name}: {v:.2f}" for v in param_values], 
             time_to_empty_results,
             label=param_name
         )
@@ -1071,7 +1071,7 @@ def perform_sensitivity_analysis():
             ax.text(
                 bar.get_width(),  # x position of label (end of the bar)
                 bar.get_y() + bar.get_height() / 2,  # y position (center of the bar)
-                f'{bar.get_width():.2f}',  # Format the value to 2 decimal places
+                f'{bar.get_width():.2e}',  # Format the value to 2 decimal places
                 va='center',  # Vertically center the text
                 ha='left',  # Align text to the left
                 color='black'  # Text color
@@ -1082,6 +1082,15 @@ def perform_sensitivity_analysis():
     ax.legend(title="Parameters", loc='best')
     plt.tight_layout()
     plt.show()
+    # 计算基准量（使用原始参数值）
+    base_time_to_empty = calculate_time_to_empty(
+        bs=2.464,  # 屏幕亮度
+        Pcpumax=4.0,  # 最大CPU功率
+        b_cpu=0.1,  # CPU功率系数
+        Cth=40.0,  # 热容
+        Tamb=25.0,  # 环境温度
+        h_th=20*0.0128  # 散热系数
+    )
 
 
 # 执行敏感性分析
