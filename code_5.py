@@ -1,3 +1,4 @@
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -182,8 +183,8 @@ def lambda_intensity_per_app(t_sec, app_type):
     t_h = (t_sec % 86400) / 3600.0
     
     # 基础昼夜节律模式（所有应用共享）
-    peak1 = 8.0  * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)  # 午后高峰
-    peak2 = 4.0 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)  # 晚间高峰
+    peak1 = 4.0  * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)  # 午后高峰
+    peak2 = 2.0 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)  # 晚间高峰
     base_intensity = 0.5 + peak1 + peak2
     
     # 应用特定的时间偏好调制
@@ -304,7 +305,7 @@ W_NET    = 0.7
 W_GPS    = 0.7
 
 # 老化量列表 (Ah)
-Q_AGING_LIST = [0.0, 100, 500, 1000, 5000]
+Q_AGING_LIST = [0,100,500,1000,5000]#[0.0, 100, 500, 1000, 5000]
 
 # Qeff 老化衰减比率
 QEFF_DECAY_RATIO = 1.314e-3
@@ -593,7 +594,7 @@ def run_joint_poisson_simulation(Q_aging, T_sim=86400, dt=10.0):
         'Qeff': Qeff, 'Q_aging': Q_aging,
     }
 
-
+'''
 # ===============================================================
 # 运行所有老化水平的仿真
 # ===============================================================
@@ -627,9 +628,9 @@ APP_COLORS = {
 
 AGING_COLORS = {
     0.0:    '#2ecc71',
-    100:   '#3498db',
-    500:   '#f39c12',
-    1000:  '#e67e22',
+    100.0:   '#3498db',
+    500.0:   '#f39c12',
+    1000.0:  '#e67e22',
     5000.0: '#e74c3c',
 }
 
@@ -911,51 +912,154 @@ for app_type in APP_TYPE_KEYS:
     active_time_h = r_new['app_active_time'][app_type] / 3600.0
     print(f"  {label:<18}: arrivals {count:>4}, active time {active_time_h:>6.2f} h")
 print("=" * 70)
+# ===============================================================
+# 运行不同环境温度下的仿真
+# ===============================================================
+print("=" * 70)
+print("运行不同环境温度下的联合泊松过程仿真 ...")
+print("=" * 70)
 
+# 环境温度列表
+Tamb_list = [-200, -40, 25, 60]
+Idk = [-25 , 0, 25, 35]
+# 存储不同环境温度下的仿真结果
+all_results_by_temp = {}
 
-# Define the different combinations of (A1, A2)
-peak_values = [
-    (8, 4),  # Case 1: A1=8, A2=4
-    (4, 2),  # Case 2: A1=4, A2=2
-    (2, 1),  # Case 3: A1=2, A2=1
-    (1, 0.5) # Case 4: A1=1, A2=0.5
-]
-
-# Function to calculate the SOC vs time
-def run_simulation_for_peaks(A1, A2):
-    def lambda_intensity_per_app(t_sec, app_type):
-        """
-        Calculate the arrival intensity using the new peaks (A1, A2).
-        """
-        app = APP_TYPES[app_type]
-        t_h = (t_sec % 86400) / 3600.0
-
-        # Use A1, A2 values for the peaks
-        peak1 = A1 * np.exp(-0.5 * ((t_h - 13.0) / 3.5)**2)  # Afternoon peak
-        peak2 = A2 * np.exp(-0.5 * ((t_h - 21.0) / 2.5)**2)  # Evening peak
-        base_intensity = 0.5 + peak1 + peak2
-
-        # Apply the time modulation for different apps (same as before)
-        time_modulation = 1.0  # Keep the existing modulation logic
-        return base_intensity * app['lambda_weight'] * time_modulation
+# 仿真
+for Tamb in Tamb_list:
+    print(f"\n 环境温度 Tamb = {Tamb} °C")
     
-    # Run the simulation with the modified peak values
-    np.random.seed(42)  # Ensure consistent results
-    results = run_joint_poisson_simulation(Q_aging=0.0, T_sim=86400, dt=10.0)
-    return results
+    # 运行所有老化水平的仿真
+    for Q_ag in Q_AGING_LIST:
+        np.random.seed(42)
+        Qeff_val = calc_Qeff(Q_ag)
+        print(f"  Q_aging = {Q_ag:>7.1f} Ah,  Qeff = {Qeff_val:.4f} Ah")
+        res = run_joint_poisson_simulation(Q_aging=Q_ag, T_sim=86400, dt=10.0)
+        all_results_by_temp[(Tamb, Q_ag)] = res
+        print(f"    放电时间: {res['discharge_time_h']:.2f} h, "
+              f"最高温度: {res['T'].max():.2f} °C, "
+              f"平均负载: {np.mean(res['P_total'])*1000:.1f} mW")
+        print(f"    各应用到达次数: {res['arrival_counts']}")
 
-# Run the simulation for each (A1, A2) combination and plot the results
-fig, ax = plt.subplots(figsize=(14, 8))
+print("\n" + "=" * 70)
 
-for A1, A2 in peak_values:
-    results = run_simulation_for_peaks(A1, A2)
-    t_h = results['t'] / 3600.0  # Convert time to hours
-    ax.plot(t_h, results['soc'], label=f"A1={A1}, A2={A2}")
+# ===============================================================
+# 绘制不同环境温度下的SOC随时间变化曲线
+# ===============================================================
+fig, ax = plt.subplots(figsize=(12, 8))
+fig.suptitle('SOC Over Time at Different Ambient Temperatures', fontsize=16, fontweight='bold')
 
-ax.set_xlabel('Time (h)', fontsize=12)
-ax.set_ylabel('SOC', fontsize=12)
-ax.set_title('SOC vs Time for Different Peak Settings (A1, A2)', fontsize=14)
-ax.legend()
-ax.grid(True)
+# 创建颜色映射 (这里用`viridis`色图，您可以选择其他色图)
+cmap = plt.get_cmap('viridis')  # 选择合适的颜色映射
+norm = plt.Normalize(vmin=min(Tamb_list), vmax=max(Tamb_list))  # 归一化温度范围
+
+for i, Tamb in enumerate(Tamb_list):
+    # 只绘制老化水平 Q_aging = 0 时的曲线
+    res = all_results_by_temp[(Tamb, 0)]  # 只取 Q_aging = 0 的仿真结果
+    t_h = res['t'] / 3600.0
+    color = cmap(norm(Tamb))  # 根据温度获取颜色
+    label = f"T={Idk[i]}°C"  # 标签只包含环境温度
+    ax.plot(t_h, res['soc'], color=color, label=label, linewidth=2)
+
+# 设置图表
+ax.set_xlabel('Time (hours)', fontsize=12)
+ax.set_ylabel('State of Charge (SOC)', fontsize=12)
+ax.set_title('SOC Over Time for Different Ambient Temperatures (Q_aging = 0)', fontsize=14, fontweight='bold')
+ax.legend(fontsize=9, loc='upper right', ncol=2)
+ax.grid(True, alpha=0.3)
+
 plt.tight_layout()
 plt.show()
+'''
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+
+# 假设你已经有了定义好的函数，比如run_joint_poisson_simulation，Q_aging的计算，等
+# 这里的函数会被用来在不同的参数设置下进行仿真，并计算“time to empty”。
+
+# 假设的初始条件
+soc_initial = 1.0
+T_sim = 86400  # 仿真时长 (秒)，1天
+dt = 10.0  # 时间步长
+
+# 定义用于敏感性分析的可变参数
+params = {
+    'bs': [2.464, 3.0, 4.0],  # 屏幕亮度常数
+    'Pcpumax': [4.0, 5.0, 6.0],  # 最大CPU功率
+    'b_cpu': [0.1, 0.2, 0.3],  # CPU功率系数
+    'Cth': [40.0, 45.0, 50.0],  # 热容
+    'Tamb': [25.0, 30.0, 35.0],  # 环境温度
+    'h_th': [0.0128, 0.015, 0.018],  # 散热系数
+    'Q_aging': [0, 100, 500, 1000, 5000],  # 电池老化量
+}
+
+# 用来计算“time to empty”的辅助函数
+def calculate_time_to_empty(Q_aging, bs, Pcpumax, b_cpu, Cth, Tamb, h_th):
+    """
+    使用run_joint_poisson_simulation来计算时间直到电池耗尽
+    """
+    result = run_joint_poisson_simulation(Q_aging=Q_aging, T_sim=T_sim, dt=dt)
+    return result['discharge_time_h']  # 返回耗尽时间（小时）
+
+# 进行敏感性分析
+def perform_sensitivity_analysis():
+    """
+    进行单因子敏感性分析，并生成龙卷风图
+    """
+    # 存储每个参数对time to empty的影响
+    sensitivity_results = []
+
+    # 对每个参数进行敏感性分析
+    for param_name, param_values in params.items():
+        time_to_empty_results = []
+        
+        for value in param_values:
+            # 修改一个参数值并进行仿真
+            # 注意：其它参数保持初始值
+            modified_params = {
+                'bs': 2.464,  # 使用默认值
+                'Pcpumax': 4.0,  # 使用默认值
+                'b_cpu': 0.1,  # 使用默认值
+                'Cth': 40.0,  # 使用默认值
+                'Tamb': 25.0,  # 使用默认值
+                'h_th': 0.0128,  # 使用默认值
+                'Q_aging': 100,  # 使用默认值
+            }
+            modified_params[param_name] = value
+            
+            # 运行仿真并计算“time to empty”
+            time_to_empty = calculate_time_to_empty(
+                Q_aging=modified_params['Q_aging'],
+                bs=modified_params['bs'],
+                Pcpumax=modified_params['Pcpumax'],
+                b_cpu=modified_params['b_cpu'],
+                Cth=modified_params['Cth'],
+                Tamb=modified_params['Tamb'],
+                h_th=modified_params['h_th']
+            )
+            time_to_empty_results.append(time_to_empty)
+        
+        sensitivity_results.append((param_name, param_values, time_to_empty_results))
+    
+    # 创建龙卷风图
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # 横轴：time to empty的变化
+    for i, (param_name, param_values, time_to_empty_results) in enumerate(sensitivity_results):
+        ax.barh(
+            [f"{param_name}: {v}" for v in param_values], 
+            time_to_empty_results,
+            label=param_name
+        )
+
+    ax.set_xlabel('Time to Empty (hours)')
+    ax.set_title('Sensitivity Analysis of Battery Life')
+    ax.legend(title="Parameters", loc='best')
+    plt.tight_layout()
+    plt.show()
+
+# 执行敏感性分析
+perform_sensitivity_analysis()
+
+
